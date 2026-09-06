@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" fill="#f2a7c6"/>
+  <!-- 像素蛋（LCD 配色）居中，用于 PWA / 主屏图标 -->
+  <g transform="translate(4 4)">
+    <g fill="#3b3f2c">
+      <rect x="6" y="1" width="4" height="1"/>
+      <rect x="4" y="2" width="8" height="2"/>
+      <rect x="3" y="4" width="10" height="4"/>
+      <rect x="3" y="8" width="10" height="2"/>
+      <rect x="4" y="10" width="8" height="2"/>
+      <rect x="5" y="12" width="6" height="1"/>
+      <rect x="6" y="13" width="4" height="2"/>
+      <rect x="5" y="5" width="2" height="2" fill="#c9d1a4"/>
+      <rect x="9" y="5" width="2" height="2" fill="#c9d1a4"/>
+      <rect x="6" y="8" width="4" height="2" fill="#c9d1a4"/>
+      <rect x="7" y="9" width="2" height="1"/>
+    </g>
+  </g>
+</svg>

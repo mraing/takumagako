@@ -1,0 +1,17 @@
+{
+  "name": "takumagako",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @takumagako/web dev",
+    "signaling": "pnpm --filter @takumagako/signaling dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "e2e": "playwright test -c apps/web/playwright.config.ts",
+    "sim": "pnpm --filter @takumagako/core sim"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "typescript": "^5.6.3"
+  }
+}
