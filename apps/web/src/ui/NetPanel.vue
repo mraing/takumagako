@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import QRCode from 'qrcode';
 import { useNetStore } from '../stores/net';
 import { usePetStore } from '../stores/pet';
@@ -65,6 +65,21 @@ const COLORS = [
   { key: 'blue', label: '蓝', swatch: '#a7c8f2' },
   { key: 'yellow', label: '黄', swatch: '#f2d189' },
 ] as const;
+
+// ---- 震动 / 通知开关（设备本地偏好） ----
+const NOTIFY_LABEL: Record<string, string> = {
+  unsupported: '🔕 通知不支持',
+  denied: '🔕 通知被拒',
+  off: '🔕 通知关',
+  on: '🔔 通知开',
+};
+const notifyLabel = computed(() => NOTIFY_LABEL[petStore.notifyUi] ?? '🔕 通知关');
+const notifyHint = computed(() => {
+  if (petStore.notifyUi === 'unsupported') return '通知：此浏览器不支持';
+  if (petStore.notifyUi === 'denied') return '通知：权限被拒，请在浏览器设置里允许';
+  if (petStore.notifyUi === 'on') return '通知：它叫你/生病/离开人世时会提醒（切到后台才发）';
+  return '通知：打开后切到后台也能收到它的呼救';
+});
 </script>
 
 <template>
@@ -146,6 +161,12 @@ const COLORS = [
         <button class="btn ghost" @click="petStore.toggleMuted()">
           {{ petStore.settings.muted ? '🔇 静音中' : '🔊 有声音' }}
         </button>
+        <button class="btn ghost" @click="petStore.toggleHaptics()">
+          {{ petStore.prefs.haptics ? '📳 有震动' : '🚫 无震动' }}
+        </button>
+        <button class="btn ghost" @click="petStore.toggleNotify()">
+          {{ notifyLabel }}
+        </button>
         <span
           v-for="c in COLORS"
           :key="c.key"
@@ -159,6 +180,9 @@ const COLORS = [
           @keyup.enter="petStore.setShellColor(c.key)"
         ></span>
       </div>
+      <p class="small hint">
+        {{ notifyHint }}
+      </p>
     </div>
   </div>
 </template>
@@ -263,7 +287,11 @@ const COLORS = [
   display: none;
 }
 .appearance {
-  margin-bottom: 0;
+  margin-bottom: 2px;
+  flex-wrap: wrap;
+}
+.hint {
+  margin: 2px 0 0;
 }
 .swatch {
   width: 22px;

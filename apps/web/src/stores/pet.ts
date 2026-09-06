@@ -24,11 +24,19 @@ import {
 } from '@takumagako/core';
 import type { UiScreen, UiSnapshot } from '../renderer/screen';
 import { playSfx, sfxForEvent } from '../lib/sfx';
+import { haptic } from '../lib/haptics';
+import {
+  clearNotifications,
+  notifySupported,
+  requestNotifyPermission,
+  sendNotification,
+} from '../lib/notify';
 
 const SAVE_KEY = 'takumagako-save-v1';
 const CORRUPT_KEY = 'takumagako-save-corrupt'; // 坏档备份槽（保留最近一份）
 const ICON_COUNT = 7; // attention 为指示灯，不在光标环内
 const OFFLINE_SUMMARY_MIN_MS = 60_000; // 离开 ≥1 分钟才弹摘要
+const PREFS_KEY = 'tk-ui-prefs'; // 设备本地 UI 偏好（震动/通知），不进存档 schema
 
 /** 兼容非安全上下文：crypto.randomUUID 仅 HTTPS/localhost 可用，局域网 HTTP 下会崩 */
 function uuid(): string {
@@ -55,6 +63,25 @@ interface GameUi {
 export interface ShellSettings {
   muted: boolean;
   shellColor: 'pink' | 'blue' | 'yellow';
+}
+
+/** 设备本地 UI 偏好：跟随设备能力（iOS 无震动硬件、通知权限各机不同），故不随存档漫游 */
+interface UiPrefs {
+  haptics: boolean;
+  notifyOn: boolean;
+}
+
+function loadPrefs(): UiPrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (raw) {
+      const p = JSON.parse(raw) as Partial<UiPrefs>;
+      return { haptics: p.haptics !== false, notifyOn: p.notifyOn === true };
+    }
+  } catch {
+    /* 坏偏好按默认处理 */
+  }
+  return { haptics: true, notifyOn: false };
 }
 
 function loadSave(): { pet: PetState | null; settings: Partial<ShellSettings>; corrupt: boolean } {
@@ -107,6 +134,11 @@ export const usePetStore = defineStore('pet', () => {
     muted: loaded.settings.muted === true,
     shellColor: loaded.settings.shellColor === 'blue' || loaded.settings.shellColor === 'yellow' ? loaded.settings.shellColor : 'pink',
   });
+  const prefs = reactive<UiPrefs>(loadPrefs());
+  // 通知按钮的状态机：unsupported / denied / off / on（权限授予但开关关着时仍显示 off）
+  const notifyUi = ref<'unsupported' | 'denied' | 'off' | 'on'>(
+    !notifySupported() ? 'unsupported' : Notification.permission === 'denied' ? 'denied' : prefs.notifyOn ? 'on' : 'off',
+  );
   let feedPending = false; // 喂食后等特效播完再自动回主页
   let lastNotice: { text: string; at: number } = { text: '', at: 0 };
   let lastKey: { key: string; at: number } = { key: '', at: 0 };
@@ -118,6 +150,14 @@ export const usePetStore = defineStore('pet', () => {
       SAVE_KEY,
       encodeSave(pet, { muted: settings.muted, shellColor: settings.shellColor }, { friendsMet: 0 }, lastSaveAt),
     );
+  }
+
+  function persistPrefs(): void {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ haptics: prefs.haptics, notifyOn: prefs.notifyOn }));
+    } catch {
+      /* 存不进去也无所谓，本次会话内仍生效 */
+    }
   }
 
   function showNotice(text: string): void {
@@ -154,7 +194,14 @@ export const usePetStore = defineStore('pet', () => {
         showNotice(describe(e));
       }
       const s = sfxForEvent(e);
-      if (s) playSfx(s, settings.muted);
+      if (s) {
+        playSfx(s, settings.muted);
+        haptic(s, prefs.haptics); // SfxName 是 HapticName 的子集，同词汇表
+      }
+      // 宠物需要照料而你不在页面上时提醒（tag 按事件类型去重，只保留最新一条）
+      if (prefs.notifyOn && (e.type === 'call' || e.type === 'sick' || e.type === 'died')) {
+        void sendNotification(pet.name, describe(e), e.type);
+      }
     }
     if (log.value.length > 8) log.value.length = 8;
 
@@ -186,6 +233,7 @@ export const usePetStore = defineStore('pet', () => {
         applyGuessResult(pet, game.wins);
         fx.value = { kind: 'win', until: now + 1500 };
         playSfx('win', settings.muted);
+        haptic('win', prefs.haptics);
         screen.value = 'main';
       }
     }
@@ -238,6 +286,7 @@ export const usePetStore = defineStore('pet', () => {
         const r = giveMedicine(pet, rng);
         if (!r.ok) return showNotice(r.reason);
         fx.value = { kind: 'inject', until: now + 2000 };
+        haptic('confirm', prefs.haptics);
         return;
       }
       case 4: {
@@ -245,6 +294,7 @@ export const usePetStore = defineStore('pet', () => {
         const r = flushPoop(pet);
         if (!r.ok) return showNotice(r.reason);
         fx.value = { kind: 'flush', until: now + 1500 };
+        haptic('confirm', prefs.haptics);
         return;
       }
       case 5: {
@@ -258,6 +308,7 @@ export const usePetStore = defineStore('pet', () => {
         const r = scold(pet);
         if (!r.ok) return showNotice(r.reason);
         fx.value = { kind: 'scold', until: now + 1500 };
+        haptic('confirm', prefs.haptics);
         return;
       }
     }
@@ -278,6 +329,7 @@ export const usePetStore = defineStore('pet', () => {
   function press(key: 'A' | 'B' | 'C'): void {
     const now = Date.now();
     playSfx('key', settings.muted);
+    haptic('key', prefs.haptics); // 三键统一入口：物理按键与键盘共用
     if (pet.stage === 'dead') {
       // 800ms 宽限：鼠标先后点击 A、C 也能命中组合
       if (
@@ -330,6 +382,7 @@ export const usePetStore = defineStore('pet', () => {
           }
           feedPending = true;
           fx.value = { kind: feedSel.value === 0 ? 'meal' : 'snack', until: now + 2500 };
+          haptic('confirm', prefs.haptics);
         } else {
           screen.value = 'main';
         }
@@ -397,6 +450,12 @@ export const usePetStore = defineStore('pet', () => {
 
   let timer: number | null = null;
   let pendingSummaryMs = 0; // >0 时首个 tick 的结算事件构成离线摘要
+
+  /** 回到前台：清掉未读通知（用户已经看见了） */
+  function onVisible(): void {
+    if (document.visibilityState === 'visible') void clearNotifications();
+  }
+
   function start(): void {
     if (timer !== null) return;
     pendingSummaryMs = Math.max(0, Date.now() - pet.updatedAt); // 启动即离线结算
@@ -404,6 +463,7 @@ export const usePetStore = defineStore('pet', () => {
     if (loaded.corrupt) log.value.unshift('存档损坏，已备份后重新孵化');
     timer = window.setInterval(tick, 250);
     window.addEventListener('beforeunload', save);
+    document.addEventListener('visibilitychange', onVisible);
   }
   function stop(): void {
     if (timer !== null) {
@@ -411,6 +471,7 @@ export const usePetStore = defineStore('pet', () => {
       timer = null;
     }
     window.removeEventListener('beforeunload', save);
+    window.removeEventListener('visibilitychange', onVisible);
     save();
   }
 
@@ -426,9 +487,46 @@ export const usePetStore = defineStore('pet', () => {
     log,
     offlineSummary,
     settings,
+    prefs,
+    notifyUi,
     toggleMuted: () => {
       settings.muted = !settings.muted;
       save();
+    },
+    /** 震动开关（设备本地偏好，不进存档） */
+    toggleHaptics: () => {
+      prefs.haptics = !prefs.haptics;
+      if (prefs.haptics) haptic('confirm', true); // 开启时立刻给一下反馈
+      persistPrefs();
+    },
+    /** 通知开关：关→请求权限；已开→关闭；被拒/不支持→给出指引 */
+    async toggleNotify(): Promise<void> {
+      if (notifyUi.value === 'unsupported') {
+        showNotice('此浏览器不支持消息通知');
+        return;
+      }
+      if (notifyUi.value === 'denied') {
+        showNotice('通知权限已被浏览器拒绝，请在浏览器设置中允许后再试');
+        return;
+      }
+      if (prefs.notifyOn) {
+        prefs.notifyOn = false;
+        notifyUi.value = 'off';
+        persistPrefs();
+        return;
+      }
+      const perm = await requestNotifyPermission();
+      if (perm === 'granted') {
+        prefs.notifyOn = true;
+        notifyUi.value = 'on';
+        persistPrefs();
+        showNotice('通知已开启：它需要你时会提醒');
+      } else if (perm === 'denied') {
+        notifyUi.value = 'denied';
+        showNotice('通知权限被拒绝了，可稍后再开');
+      } else {
+        showNotice('未开启通知，可稍后再试');
+      }
     },
     setShellColor: (c: ShellSettings['shellColor']) => {
       settings.shellColor = c;

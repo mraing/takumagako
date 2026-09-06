@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { usePetStore } from '../stores/pet';
 import { ICONS } from '../renderer/sprites';
 import PixelIcon from './PixelIcon.vue';
+import { haptic } from '../lib/haptics';
 
 const props = defineProps<{ position: 'top' | 'bottom' }>();
 const store = usePetStore();
@@ -29,7 +30,10 @@ function iconRows(key: string): string[] {
 function onClick(i: number): void {
   if (i === 7) return; // attention 仅指示
   if (store.icon === i) store.press('B');
-  else store.icon = i;
+  else {
+    store.icon = i;
+    haptic('tap', store.prefs.haptics);
+  }
 }
 </script>
 

@@ -24,9 +24,8 @@ function onKey(e: KeyboardEvent): void {
 onMounted(() => window.addEventListener('keydown', onKey));
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 
-/** 触屏按压：轻微震动反馈（支持的手机上） */
+/** 触屏按压（震动反馈已统一由 store.press → haptic 处理） */
 function tap(key: 'A' | 'B' | 'C'): void {
-  navigator.vibrate?.(8);
   tiltDevice(key);
   store.press(key);
 }
